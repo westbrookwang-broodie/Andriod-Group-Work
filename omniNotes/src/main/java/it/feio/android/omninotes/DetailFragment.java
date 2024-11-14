@@ -22,6 +22,7 @@ import static android.content.Context.LAYOUT_INFLATER_SERVICE;
 import static android.content.pm.PackageManager.FEATURE_CAMERA;
 import static android.content.pm.PackageManager.PERMISSION_GRANTED;
 import static android.widget.Toast.LENGTH_SHORT;
+import static androidx.core.content.ContextCompat.getSystemService;
 import static androidx.core.view.ViewCompat.animate;
 import static it.feio.android.omninotes.BaseActivity.TRANSITION_HORIZONTAL;
 import static it.feio.android.omninotes.BaseActivity.TRANSITION_VERTICAL;
@@ -76,6 +77,7 @@ import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
+import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -84,6 +86,8 @@ import android.graphics.Point;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
 import android.media.MediaPlayer;
 import android.media.MediaRecorder;
 import android.media.ThumbnailUtils;
@@ -114,15 +118,30 @@ import android.widget.AutoCompleteTextView;
 import android.widget.CheckBox;
 import android.widget.ImageView;
 import android.widget.Toast;
+
 import androidx.activity.result.ActivityResultCallback;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.annotation.NonNull;
+import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.core.util.Pair;
 import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.fragment.app.FragmentTransaction;
+
+import com.adevinta.leku.LocationPickerActivity;
 import com.afollestad.materialdialogs.DialogAction;
 import com.afollestad.materialdialogs.MaterialDialog;
+import com.google.android.gms.maps.GoogleMap;
+import com.google.android.gms.maps.OnMapReadyCallback;
+import com.google.android.gms.maps.SupportMapFragment;
+import com.google.android.gms.maps.model.LatLng;
+import com.google.android.gms.maps.model.MarkerOptions;
+import com.google.android.libraries.places.api.Places;
+import com.google.android.libraries.places.api.model.Place;
+import com.google.android.libraries.places.api.net.PlacesClient;
+import com.google.android.libraries.places.widget.Autocomplete;
+import com.google.android.libraries.places.widget.model.AutocompleteActivityMode;
 import com.neopixl.pixlui.components.edittext.EditText;
 import com.pixplicity.easyprefs.library.Prefs;
 import com.pushbullet.android.extension.MessagingExtension;
@@ -165,6 +184,7 @@ import it.feio.android.omninotes.models.adapters.CategoryRecyclerViewAdapter;
 import it.feio.android.omninotes.models.adapters.PlacesAutoCompleteAdapter;
 import it.feio.android.omninotes.models.listeners.OnAttachingFileListener;
 import it.feio.android.omninotes.models.listeners.OnGeoUtilResultListener;
+import it.feio.android.omninotes.models.listeners.OnLocationPickedListener;
 import it.feio.android.omninotes.models.listeners.OnReminderPickedListener;
 import it.feio.android.omninotes.models.listeners.RecyclerViewItemClickSupport;
 import it.feio.android.omninotes.models.views.ExpandableHeightGridView;
@@ -176,6 +196,7 @@ import it.feio.android.omninotes.utils.FileProviderHelper;
 import it.feio.android.omninotes.utils.GeocodeHelper;
 import it.feio.android.omninotes.utils.IntentChecker;
 import it.feio.android.omninotes.utils.KeyboardUtils;
+import it.feio.android.omninotes.utils.LocationReminderPicker;
 import it.feio.android.omninotes.utils.PasswordHelper;
 import it.feio.android.omninotes.utils.ReminderHelper;
 import it.feio.android.omninotes.utils.Security;
@@ -185,7 +206,10 @@ import it.feio.android.omninotes.utils.TagsHelper;
 import it.feio.android.omninotes.utils.TextHelper;
 import it.feio.android.omninotes.utils.date.DateUtils;
 import it.feio.android.omninotes.utils.date.ReminderPickers;
+import it.feio.android.omninotes.utils.location.LocationPicker;
+import it.feio.android.omninotes.utils.location.LocationPickerFragment;
 import it.feio.android.pixlui.links.TextLinkClickListener;
+
 import java.io.File;
 import java.io.IOException;
 import java.lang.ref.WeakReference;
@@ -195,14 +219,16 @@ import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
+
 import org.apache.commons.collections4.CollectionUtils;
 
 
 public class DetailFragment extends BaseFragment implements OnReminderPickedListener,
-    OnTouchListener,
-    OnAttachingFileListener, TextWatcher, CheckListChangedListener,
-    OnGeoUtilResultListener {
+        OnTouchListener,
+        OnAttachingFileListener, TextWatcher, CheckListChangedListener,
+        OnGeoUtilResultListener, OnLocationPickedListener {
 
   private static final int TAKE_PHOTO = 1;
   private static final int TAKE_VIDEO = 2;
@@ -250,39 +276,42 @@ public class DetailFragment extends BaseFragment implements OnReminderPickedList
   private ArrayList<String> mergedNotesIds;
   private MainActivity mainActivity;
   private boolean activityPausing;
+  private OnLocationPickedListener mOnLocationPickedListener;
+  private LocationManager locationManager;
+  private Double longitude, latitude;
 
   TextLinkClickListener textLinkClickListener = (view, clickedString, url) -> {
-      new MaterialDialog.Builder(mainActivity)
-          .content(clickedString)
-          .negativeColorRes(R.color.colorPrimary)
-          .positiveText(R.string.open)
-          .negativeText(R.string.copy)
-          .onPositive((dialog, which) -> {
-            try {
-              Intent intent = TagOpenerHelper.openOrGetIntent(getContext(), url);
-              if (intent != null) {
-                mainActivity.initNotesList(intent);
+    new MaterialDialog.Builder(mainActivity)
+            .content(clickedString)
+            .negativeColorRes(R.color.colorPrimary)
+            .positiveText(R.string.open)
+            .negativeText(R.string.copy)
+            .onPositive((dialog, which) -> {
+              try {
+                Intent intent = TagOpenerHelper.openOrGetIntent(getContext(), url);
+                if (intent != null) {
+                  mainActivity.initNotesList(intent);
+                }
+              } catch (UnhandledIntentException e) {
+                mainActivity.showMessage(R.string.no_application_can_perform_this_action,
+                        ONStyle.ALERT);
               }
-            } catch (UnhandledIntentException e) {
-              mainActivity.showMessage(R.string.no_application_can_perform_this_action,
-                  ONStyle.ALERT);
-            }
-          })
-          .onNegative((dialog, which) -> {
-            android.content.ClipboardManager clipboard = (android.content.ClipboardManager)
-                mainActivity.getSystemService(CLIPBOARD_SERVICE);
-            android.content.ClipData clip = android.content.ClipData.newPlainText("text label",
-                clickedString);
-            clipboard.setPrimaryClip(clip);
-          }).build().show();
-      View clickedView =
-          Boolean.TRUE.equals(noteTmp.isChecklist()) ? toggleChecklistView : binding.contentWrapper;
-      clickedView.clearFocus();
-      KeyboardUtils.hideKeyboard(clickedView);
-      new Handler().post(() -> {
-        View clickedView1 = Boolean.TRUE.equals(noteTmp.isChecklist()) ? toggleChecklistView : binding.contentWrapper;
-        KeyboardUtils.hideKeyboard(clickedView1);
-      });
+            })
+            .onNegative((dialog, which) -> {
+              android.content.ClipboardManager clipboard = (android.content.ClipboardManager)
+                      mainActivity.getSystemService(CLIPBOARD_SERVICE);
+              android.content.ClipData clip = android.content.ClipData.newPlainText("text label",
+                      clickedString);
+              clipboard.setPrimaryClip(clip);
+            }).build().show();
+    View clickedView =
+            Boolean.TRUE.equals(noteTmp.isChecklist()) ? toggleChecklistView : binding.contentWrapper;
+    clickedView.clearFocus();
+    KeyboardUtils.hideKeyboard(clickedView);
+    new Handler().post(() -> {
+      View clickedView1 = Boolean.TRUE.equals(noteTmp.isChecklist()) ? toggleChecklistView : binding.contentWrapper;
+      KeyboardUtils.hideKeyboard(clickedView1);
+    });
   };
 
   @Override
@@ -440,8 +469,8 @@ public class DetailFragment extends BaseFragment implements OnReminderPickedList
   private void checkNoteLock(Note note) {
     // If note is locked security password will be requested
     if (Boolean.TRUE.equals(note.isLocked()
-        && Prefs.getString(PREF_PASSWORD, null) != null)
-        && !Prefs.getBoolean("settings_password_access", false)) {
+            && Prefs.getString(PREF_PASSWORD, null) != null)
+            && !Prefs.getBoolean("settings_password_access", false)) {
       PasswordHelper.requestPassword(mainActivity, passwordConfirmed -> {
         switch (passwordConfirmed) {
           case SUCCEED:
@@ -526,8 +555,8 @@ public class DetailFragment extends BaseFragment implements OnReminderPickedList
 
     // Handles third party apps requests of sharing
     if (IntentChecker
-        .checkAction(i, Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE, Intent.ACTION_PROCESS_TEXT, INTENT_GOOGLE_NOW)
-        && i.getType() != null) {
+            .checkAction(i, Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE, Intent.ACTION_PROCESS_TEXT, INTENT_GOOGLE_NOW)
+            && i.getType() != null) {
 
       afterSavedReturnsToList = false;
 
@@ -543,7 +572,7 @@ public class DetailFragment extends BaseFragment implements OnReminderPickedList
 
       // Text content
       String content = null;
-      if (Intent.ACTION_PROCESS_TEXT.equals(i.getAction())){
+      if (Intent.ACTION_PROCESS_TEXT.equals(i.getAction())) {
         content = i.getStringExtra(Intent.EXTRA_PROCESS_TEXT).toString();
       } else {
         content = i.getStringExtra(Intent.EXTRA_TEXT);
@@ -558,8 +587,8 @@ public class DetailFragment extends BaseFragment implements OnReminderPickedList
     }
 
     if (IntentChecker
-        .checkAction(i, Intent.ACTION_MAIN, ACTION_WIDGET_SHOW_LIST, ACTION_SHORTCUT_WIDGET,
-            ACTION_WIDGET)) {
+            .checkAction(i, Intent.ACTION_MAIN, ACTION_WIDGET_SHOW_LIST, ACTION_SHORTCUT_WIDGET,
+                    ACTION_WIDGET)) {
       showKeyboard = true;
     }
 
@@ -604,6 +633,30 @@ public class DetailFragment extends BaseFragment implements OnReminderPickedList
     // Sets onTouchListener to the whole activity to swipe notes
     binding.detailRoot.setOnTouchListener(this);
 
+    locationManager = (LocationManager) mainActivity.getSystemService(mainActivity.LOCATION_SERVICE);
+    if (ActivityCompat.checkSelfPermission(getAppContext(), permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(getAppContext(), permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+      // TODO: Consider calling
+      //    ActivityCompat#requestPermissions
+      // here to request the missing permissions, and then overriding
+      //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+      //                                          int[] grantResults)
+      // to handle the case where the user grants the permission. See the documentation
+      // for ActivityCompat#requestPermissions for more details.
+      return;
+    }
+    locationManager.requestLocationUpdates(
+            LocationManager.GPS_PROVIDER,    // 使用 GPS 提供者
+            1000,                          // 每 10 秒请求一次位置更新
+            10,// 每移动 10 米更新一次位
+            new LocationListener() {
+              @Override
+              public void onLocationChanged(@NonNull Location location) {
+                latitude = location.getLatitude();
+                longitude = location.getLongitude();
+              }
+            }
+    );
+
     // Color of tag marker if note is tagged a function is active in preferences
     setTagMarkerColor(noteTmp.getCategory());
 
@@ -616,6 +669,8 @@ public class DetailFragment extends BaseFragment implements OnReminderPickedList
     initViewAttachments();
 
     initViewReminder();
+
+    initViewLocationReminder();
 
     initViewFooter();
   }
@@ -649,15 +704,15 @@ public class DetailFragment extends BaseFragment implements OnReminderPickedList
 
     binding.fragmentDetailContent.reminderLayout.setOnLongClickListener(v -> {
       MaterialDialog dialog = new MaterialDialog.Builder(mainActivity)
-          .content(R.string.remove_reminder)
-          .positiveText(R.string.ok)
-          .onPositive((dialog1, which) -> {
-            ReminderHelper.removeReminder(getAppContext(), noteTmp);
-            noteTmp.setAlarm(null);
-            binding.fragmentDetailContent.reminderIcon
-                .setImageResource(R.drawable.ic_alarm_black_18dp);
-            binding.fragmentDetailContent.datetime.setText("");
-          }).build();
+              .content(R.string.remove_reminder)
+              .positiveText(R.string.ok)
+              .onPositive((dialog1, which) -> {
+                ReminderHelper.removeReminder(getAppContext(), noteTmp);
+                noteTmp.setAlarm(null);
+                binding.fragmentDetailContent.reminderIcon
+                        .setImageResource(R.drawable.ic_alarm_black_18dp);
+                binding.fragmentDetailContent.datetime.setText("");
+              }).build();
       dialog.show();
       return true;
     });
@@ -670,6 +725,60 @@ public class DetailFragment extends BaseFragment implements OnReminderPickedList
       binding.fragmentDetailContent.datetime.setText(reminderString);
     }
   }
+
+
+
+  private static String getProvider(LocationManager locationManager){
+
+    //获取位置信息提供者列表
+    List<String> providerList = locationManager.getProviders(true);
+
+    if (providerList.contains(LocationManager.NETWORK_PROVIDER)){
+      //获取NETWORK定位
+      return LocationManager.NETWORK_PROVIDER;
+    }else if (providerList.contains(LocationManager.GPS_PROVIDER)){
+      //获取GPS定位
+      return LocationManager.GPS_PROVIDER;
+    }
+    return null;
+  }
+
+  @SuppressLint("MissingPermission")
+  private Location getLocation() {
+    // 获取当前位置管理器
+    String provider = getProvider(locationManager);
+
+    if (provider == null) {
+      Toast.makeText(getContext(), "定位失败", Toast.LENGTH_SHORT).show();
+    }
+//    //系统权限检查警告，需要做权限判断
+//    if (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+//      // TODO: Consider calling ActivityCompat#requestPermissions
+//      return null;
+//    }
+    return locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+    // 启动位置请求
+    // LocationManager.GPS_PROVIDER GPS定位
+    // LocationManager.NETWORK_PROVIDER 网络定位
+    // LocationManager.PASSIVE_PROVIDER 被动接受定位信息
+//    locationManager.requestLocationUpdates(LocationManager.PASSIVE_PROVIDER, 0, 0, LocationListener);
+  }
+
+  private void initViewLocationReminder() {
+    binding.fragmentDetailContent.reminderLocationLayout.setOnClickListener(v -> {
+      Location location = getLocation();
+      LocationPicker locationPicker = new LocationPicker(mainActivity, mFragment);
+      locationPicker.pick(location);
+    });
+
+    String reminderString = initLocationReminder(noteTmp);
+    if (!TextUtils.isEmpty(reminderString)) {
+      binding.fragmentDetailContent.reminderLocationIcon
+              .setImageResource(R.drawable.location_choose);
+      binding.fragmentDetailContent.locateText.setText(reminderString);
+    }
+  }
+
 
   private void initViewLocation() {
 
@@ -1605,6 +1714,8 @@ public class DetailFragment extends BaseFragment implements OnReminderPickedList
     return !noteTmp.isChanged(note) || (noteTmp.isLocked() && !noteTmp.isPasswordChecked());
   }
 
+
+
   /**
    * Checks if only tag, archive or trash status have been changed and then force to not update last
    * modification date*
@@ -1720,6 +1831,29 @@ public class DetailFragment extends BaseFragment implements OnReminderPickedList
     } else {
       return RecurrenceHelper.getNoteReminderText(reminder);
     }
+  }
+  //    noteTmp.setRemind_latitude(latitude);
+  //    noteTmp.setRemind_longitude(longitude);
+  //    if (mFragment.isAdded()) {
+  //      binding.fragmentDetailContent.reminderLocationIcon.setImageResource(R.drawable.location_choose);
+  //      binding.fragmentDetailContent.locateText
+  //              .setText(RecurrenceHelper.getNoteLocationReminderText(latitude, longitude));
+  //    }
+  //    noteTmp.setRemind_longitude(longitude);
+  //    noteTmp.setRemind_latitude(latitude);
+
+  private String initLocationReminder(Note note) {
+    if (noteTmp.getRemindLatitude() == null) {
+      return "";
+    }
+    return RecurrenceHelper.getNoteLocationReminderText(note.getRemindLatitude(), note.getRemindLongitude());
+//    long reminder = parseLong(note.getAlarm());
+//    String rrule = note.getRecurrenceRule();
+//    if (!TextUtils.isEmpty(rrule)) {
+//      return RecurrenceHelper.getNoteRecurrentReminderText(reminder, rrule);
+//    } else {
+//      return RecurrenceHelper.getNoteReminderText(reminder);
+//    }
   }
 
   /**
@@ -2214,6 +2348,17 @@ public class DetailFragment extends BaseFragment implements OnReminderPickedList
     note = new Note(event.getNotes().get(0));
     if (goBack) {
       goHome();
+    }
+  }
+
+  @Override
+  public void onLocationPicked(double latitude, double longitude) {
+    noteTmp.setRemind_latitude(latitude);
+    noteTmp.setRemind_longitude(longitude);
+    if (mFragment.isAdded()) {
+      binding.fragmentDetailContent.reminderLocationIcon.setImageResource(R.drawable.location_choose);
+      binding.fragmentDetailContent.locateText
+              .setText(RecurrenceHelper.getNoteLocationReminderText(latitude, longitude));
     }
   }
 

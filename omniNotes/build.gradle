@@ -18,6 +18,7 @@
 plugins {
     id "kotlin-android"
     id "com.android.application"
+    id 'com.google.android.libraries.mapsplatform.secrets-gradle-plugin'
 }
 
 boolean signConfigExists = project.hasProperty("SIGN_PROPS") && new File(project.property("SIGN_PROPS")).exists()
@@ -125,6 +126,8 @@ android {
 }
 
 dependencies {
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.2.0'
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.mockito:mockito-core:5.6.0'
 
@@ -165,7 +168,9 @@ dependencies {
     implementation 'com.google.android.material:material:1.9.0'
     implementation 'de.greenrobot:eventbus:2.4.0'
     implementation 'com.pushbullet:android-extensions:1.0.4@aar'
+    implementation 'com.google.android.gms:play-services-maps:18.0.2'
     implementation 'com.getbase:floatingactionbutton:1.10.1'
+    implementation 'com.google.android.gms:play-services-location:21.0.1'
     implementation 'com.github.bumptech.glide:glide:4.8.0'   // To be modified with Gallery library
     annotationProcessor 'com.github.bumptech.glide:compiler:4.8.0' // To be modified with Gallery library
     implementation('com.github.afollestad.material-dialogs:core:0.9.6.0') {
@@ -189,6 +194,8 @@ dependencies {
     implementation 'com.github.sevar83:indeterminate-checkbox:1.0.5@aar'
     implementation 'com.pixplicity.easyprefs:EasyPrefs:1.10.0'
     implementation 'com.lazygeniouz:dfc:0.8'
+    implementation 'com.google.android.libraries.places:places:2.7.0'
+    implementation 'com.google.android.material:material:1.9.0'
 
     implementation('com.github.federicoiosue:simplegallery:3.0.1') {
         exclude group: 'com.android.support'
@@ -201,6 +208,7 @@ dependencies {
         transitive = false
     }
     implementation 'com.github.federicoiosue:pixlui:3.0.1'
+    implementation 'com.adevinta.android:leku:11.1.4'
 
     // Flavors specific dependencies
     playImplementation 'io.nlopez.smartlocation:library:3.2.4'
@@ -269,4 +277,10 @@ tasks.withType(Test).configureEach {
 }
 repositories {
     mavenCentral()
+}
+
+configurations.all {
+    // 这是该问题的解决方案：
+    // https://stackoverflow.com/questions/52521302/how-to-solve-program-type-already-present-com-google-common-util-concurrent-lis
+    exclude group: 'com.google.guava', module: 'listenablefuture'
 }

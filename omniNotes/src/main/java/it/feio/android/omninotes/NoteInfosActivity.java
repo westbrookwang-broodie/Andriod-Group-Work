@@ -45,6 +45,7 @@ public class NoteInfosActivity extends Activity {
 
     Note note = Objects.requireNonNull(getIntent().getExtras()).getParcelable(INTENT_NOTE);
     populateViews(note);
+    OmniNotes.setCurrentActivity(this);
   }
 
   private void populateViews(Note note) {

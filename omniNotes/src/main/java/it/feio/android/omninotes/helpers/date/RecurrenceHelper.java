@@ -27,6 +27,7 @@ import com.appeaser.sublimepickerlibrary.recurrencepicker.EventRecurrenceFormatt
 import com.appeaser.sublimepickerlibrary.recurrencepicker.SublimeRecurrencePicker.RecurrenceOption;
 import it.feio.android.omninotes.OmniNotes;
 import it.feio.android.omninotes.R;
+import it.feio.android.omninotes.helpers.LocationHelper;
 import it.feio.android.omninotes.helpers.LogDelegate;
 import it.feio.android.omninotes.models.Note;
 import java.text.ParseException;
@@ -85,6 +86,12 @@ public class RecurrenceHelper {
     return OmniNotes.getAppContext().getString(R.string.alarm_set_on) + " " + DateHelper
         .getDateTimeShort(OmniNotes
             .getAppContext(), reminder);
+  }
+
+  public static String getNoteLocationReminderText(double latitude, double longitude) {
+    return OmniNotes.getAppContext().getString(R.string.location_set_on) + " " + LocationHelper
+            .getAddressFromCoordinates(OmniNotes
+                    .getAppContext(), latitude, longitude);
   }
 
   public static String getNoteRecurrentReminderText(long reminder, String rrule) {

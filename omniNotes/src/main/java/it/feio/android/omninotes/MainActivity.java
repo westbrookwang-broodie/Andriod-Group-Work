@@ -34,19 +34,28 @@ import static it.feio.android.omninotes.utils.ConstantsBase.INTENT_KEY;
 import static it.feio.android.omninotes.utils.ConstantsBase.INTENT_NOTE;
 import static it.feio.android.omninotes.utils.ConstantsBase.PREF_PASSWORD;
 
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.AsyncTask;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.view.MenuItem;
 import android.view.View;
 import android.widget.Toast;
+
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.ActionBarDrawerToggle;
 import androidx.appcompat.widget.Toolbar;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import androidx.core.view.GravityCompat;
 import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.fragment.app.Fragment;
@@ -71,11 +80,20 @@ import it.feio.android.omninotes.models.Attachment;
 import it.feio.android.omninotes.models.Category;
 import it.feio.android.omninotes.models.Note;
 import it.feio.android.omninotes.models.ONStyle;
+import it.feio.android.omninotes.models.listeners.OnLocationPickedListener;
 import it.feio.android.omninotes.utils.FileProviderHelper;
 import it.feio.android.omninotes.utils.PasswordHelper;
 import it.feio.android.omninotes.utils.SystemHelper;
+import it.feio.android.omninotes.utils.location.LocationPickerFragment;
 import it.feio.android.pixlui.links.UrlCompleter;
 import java.io.FileNotFoundException;
+import com.google.android.gms.maps.CameraUpdateFactory;
+import com.google.android.gms.maps.GoogleMap;
+import com.google.android.gms.maps.OnMapReadyCallback;
+import com.google.android.gms.maps.SupportMapFragment;
+import com.google.android.gms.maps.model.LatLng;
+import com.google.android.gms.maps.model.MarkerOptions;
+import android.Manifest;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -84,7 +102,7 @@ import lombok.Setter;
 
 
 public class MainActivity extends BaseActivity implements
-    SharedPreferences.OnSharedPreferenceChangeListener {
+        SharedPreferences.OnSharedPreferenceChangeListener, OnLocationPickedListener {
 
   private boolean isPasswordAccepted = false;
   public static final String FRAGMENT_DRAWER_TAG = "fragment_drawer";
@@ -95,21 +113,42 @@ public class MainActivity extends BaseActivity implements
   private Uri sketchUri;
   boolean prefsChanged = false;
   private FragmentManager mFragmentManager;
+  private GoogleMap mMap;
 
   ActivityMainBinding binding;
+  private static final int LOCATION_PERMISSION_REQUEST_CODE = 1;
+
+  private void enableMyLocation() {
+    if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+            == PackageManager.PERMISSION_GRANTED) {
+      mMap.setMyLocationEnabled(true);
+    } else {
+      ActivityCompat.requestPermissions(this, new String[]
+              {Manifest.permission.ACCESS_FINE_LOCATION}, LOCATION_PERMISSION_REQUEST_CODE);
+    }
+  }
+
+  @Override
+  public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+    super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+    if (requestCode == LOCATION_PERMISSION_REQUEST_CODE) {
+      if (permissions.length == 1 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+        enableMyLocation();
+      }
+    }
+  }
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
     setTheme(R.style.OmniNotesTheme_ApiSpec);
-
     binding = ActivityMainBinding.inflate(getLayoutInflater());
     View view = binding.getRoot();
     setContentView(view);
-
     EventBus.getDefault().register(this);
     Prefs.getPreferences().registerOnSharedPreferenceChangeListener(this);
     new NotificationsHelper(this).askToEnableNotifications(this);
+    OmniNotes.setCurrentActivity(this);
 
     initUI();
   }
@@ -150,6 +189,7 @@ public class MainActivity extends BaseActivity implements
   protected void onStop() {
     super.onStop();
     EventBus.getDefault().unregister(this);
+    OmniNotes.setCurrentActivity(null);
   }
 
 
@@ -197,6 +237,7 @@ public class MainActivity extends BaseActivity implements
 
   private void init() {
     isPasswordAccepted = true;
+
 
     getFragmentManagerInstance();
 
@@ -603,4 +644,8 @@ public class MainActivity extends BaseActivity implements
     prefsChanged = true;
   }
 
+  @Override
+  public void onLocationPicked(double latitude, double longitude) {
+
+  }
 }

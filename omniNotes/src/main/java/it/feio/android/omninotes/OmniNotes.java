@@ -21,6 +21,7 @@ import static it.feio.android.omninotes.helpers.BuildHelper.isDebugBuild;
 import static it.feio.android.omninotes.utils.Constants.PACKAGE;
 import static it.feio.android.omninotes.utils.ConstantsBase.PREF_LANG;
 
+import android.app.Activity;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.os.StrictMode;
@@ -40,9 +41,21 @@ public class OmniNotes extends MultiDexApplication {
 
   private static Context mContext;
 
+  private static Activity currentActivity;
+
+  public static void setCurrentActivity(Activity activity) {
+    currentActivity = activity;
+  }
+
+  public static Activity getCurrentActivity() {
+    return currentActivity;
+  }
+
   public static Context getAppContext() {
     return OmniNotes.mContext;
   }
+
+
 
   @Override
   protected void attachBaseContext(Context base) {

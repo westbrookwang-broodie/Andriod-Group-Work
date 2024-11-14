@@ -19,7 +19,10 @@ package it.feio.android.omninotes.async.notes;
 
 import android.content.Context;
 import android.os.AsyncTask;
+import android.util.Log;
+
 import de.greenrobot.event.EventBus;
+import it.feio.android.omninotes.MapsActivity;
 import it.feio.android.omninotes.OmniNotes;
 import it.feio.android.omninotes.async.bus.NotesUpdatedEvent;
 import it.feio.android.omninotes.db.DbHelper;
@@ -51,10 +54,15 @@ public class SaveNoteTask extends AsyncTask<Note, Void, Note> {
     if (reminderMustBeSet) {
       note.setReminderFired(false);
     }
+
     note = DbHelper.getInstance().updateNote(note, updateLastModification);
+    if(note.getRemindLongitude() != null && note.getRemindLatitude() != null){
+      ReminderHelper.addLocationReminder(OmniNotes.getAppContext(), note, note.getRemindLatitude(), note.getRemindLongitude());
+    }
     if (reminderMustBeSet) {
       ReminderHelper.addReminder(context, note);
     }
+
     return note;
   }
 
